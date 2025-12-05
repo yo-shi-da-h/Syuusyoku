@@ -1,35 +1,69 @@
 #pragma once
+
 #include "KamataEngine.h"
-
+#include "MapChipField.h"
+#include "Player.h"
+#include "CameraController.h"
+    // #include "Enemy.h"
 using namespace KamataEngine;
-class GameScene
-{
+
+class GameScene {
 public:
-	GameScene() = default;
+	GameScene();
 	~GameScene();
-	// 初期化
+
 	void Initialize();
-	// 更新
 	void Update();
-	// 描画
 	void Draw();
+
+	void GenerateBlocks();
+
+	void SwitchStage();
+ 
+
 private:
-	DirectXCommon* dxCommon_ = nullptr; // DirectXCommonのインスタンス
-
-	// エフェクト3Dモデルデータ
-	Model* modelEffect_ = nullptr;
-
-	Camera camera_;
+	DirectXCommon* dxCommon_ = nullptr;
 	Input* input_ = nullptr;
+	Audio* audio_ = nullptr;
 
-	float bgPosX1_;     // 背景 A の現在 X座標
-    float bgPosX2_;     // 背景 B の現在 X座標
-	float bgPosX3_;     // 背景 C の現在 X座標
-	float bgPosX4_;     // 背景 D の現在 X座標
-    float bgSpeed_;     // 背景スクロール速度
+	Player* player_ = nullptr;
+	
+	//Enemy* enemy_ = nullptr;
+
+	MapChipField* mapChipField_;
+
+	CameraController* cameraController_ = nullptr;
+
+	
+
+	Vector3 enemyPos = {0, 3, 100};
+
+	Model* modelPlayer_ = nullptr;
+	Model* modelBlock_ = nullptr;
+	
+	
+	//Model* modelSkydome_ = nullptr;
+
+	Model* modelTable_ = nullptr;
+
 	uint32_t textureHandle_ = 0;
 	uint32_t textureHandle2_ = 0;
-	Sprite* backGroundSprite_ = nullptr; //背景の画像
-	Sprite* backGroundSprite2_ = nullptr; //背景の画像2
-};
+	uint32_t textureHandle3_ = 0;
+	uint32_t textureHandle4_ = 0;
+	uint32_t textureHandle5_ = 0;
+	uint32_t textureHandle6_ = 0;
+	uint32_t textureHandle7_ = 0;
 
+	//Sprite* FrontGroundSprite_ = nullptr; //前景のスプライト
+	//Sprite* BackGroundSprite_ = nullptr;//背景のスプライト
+
+	
+	std::vector<std::vector<WorldTransform*>> worldTransformBlocks_;
+	
+
+	Camera camera_;
+
+	bool isDebugCameraActive_ = false;
+	// デバックカメラ
+	DebugCamera* debugCamera_ = nullptr;
+};

@@ -1,66 +1,223 @@
 #include "GameScene.h"
+#include "3d/AxisIndicator.h"
+#include <cassert>
+
+#ifdef DEBUG
+
+#include "imgui.h"
+#include "imgui_impl_dx12.h"
+#include "imgui_impl_win32.h"
+
+#endif // DEBUG
 
 
-using namespace MathUtility;
-GameScene::~GameScene()
-{
-	delete backGroundSprite_;
-}
+GameScene::GameScene() {}
+
+GameScene::~GameScene() {
+	delete modelPlayer_;
+	//delete modelEnemy_; // 追加
+	delete player_;
+	delete modelBlock_;
+	delete debugCamera_;
+	delete mapChipField_;
+	for (std::vector<WorldTransform*>& worldTransformBlockLine : worldTransformBlocks_) {
+		for (WorldTransform* worldTransformBlock : worldTransformBlockLine) {
+			delete worldTransformBlock;
+		}
+	}
+	worldTransformBlocks_.clear();
+	
+
+	}
+
+
 void GameScene::Initialize() {
-	// 初期化処理
-	dxCommon_ = KamataEngine::DirectXCommon::GetInstance();
-	input_ = KamataEngine::Input::GetInstance();
-	
-	textureHandle_ = KamataEngine::TextureManager::Load("miti2.png");
-	backGroundSprite_ = Sprite::Create(textureHandle_, {0.0f,0.0f});
-	textureHandle2_ = KamataEngine::TextureManager::Load("miti.png");
-	backGroundSprite2_ = Sprite::Create(textureHandle2_, { 0.0f, 0.0f });
 
-	float bgPox1 = 240.0f;
-	float bgPox2 = 240.0f;
-	/*float bgPox3 = 240.0f;
-	float bgPox4 = 240.0f;*/
-	bgPosX1_ = bgPox1;
-	bgPosX2_ = bgPox2;
-	/*bgPosX3_ = bgPox3;
-	bgPosX4_ = bgPox4;*/
-	bgSpeed_ = 4.0f; // スクロール速度の設定
-    
+	dxCommon_ = DirectXCommon::GetInstance();
+	input_ = Input::GetInstance();
+	audio_ = Audio::GetInstance();
+
+	mapChipField_ = new MapChipField;
+	mapChipField_->LoadMapChipCsv("Resources/mapClassroom1.csv");
+
+
+	player_ = new Player();
+	player_->SetMapChipField(mapChipField_);
+	// enemy_ = new Enemy();
+	// skydome_ = new Skydome();
+	//  3Dモデルの生成
+	modelPlayer_ = KamataEngine::Model::CreateFromOBJ("player", true);
+	modelBlock_ = KamataEngine::Model::CreateFromOBJ("block", true);
+	
+
+	// ビュープロジェクションの初期化
+	camera_.Initialize();
+
+	// playerPos.z = 0;
+	Vector3 playerPos = mapChipField_->GetMapChipPositionByIndex(2, 18);
+	player_->Initialize(modelPlayer_, &camera_, playerPos);
+	// enemy_->Initialize(modelEnemy_, &camera_, enemyPos);
+	// skydome_->Initialize(modelSkydome_, &camera_);
+
+	cameraController_ = new CameraController();
+	cameraController_->Initialize();
+	cameraController_->setTarget(player_);
+	CameraController::Rect cameraAreaa = {12.0f, 100 - 10.0f, 6.0f, 24.0f};
+	cameraController_->SetMovableArea(cameraAreaa);
+	cameraController_->Reset();
+
+	debugCamera_ = new DebugCamera(1280, 720);
+
+	GenerateBlocks();
 }
+
+
 void GameScene::Update() {
-	// 更新処理
-	 // フレーム時間を取得（デルタタイムを使って速度を時間あたりに）
-	//float deltaTime = 1.0f / 60.0f; // 仮に60FPS固定とする
-	// 背景のX座標を更新
-	bgPosX1_ -= bgSpeed_;
-	bgPosX2_ -= bgSpeed_;
-	/*bgPosX3_ -= bgSpeed_;
-	bgPosX4_ -= bgSpeed_;*/
-	// 背景Aが画面外に出たら、背景Bの右側に配置
-	if (bgPosX1_ <= -480.0f) {
-		bgPosX1_ = bgPosX2_ + 1280.0f;
-	}
-	// 背景Bが画面外に出たら、背景Aの右側に配置
-	if (bgPosX2_ <= -480.0f) {
-		bgPosX2_ = bgPosX1_ + 1280.0f;
-	}
 
+	SwitchStage();
 
+	cameraController_->Update();
+	player_->Update();
+	//enemy_->Update();
+	debugCamera_->Update();
+	// ブロックの更新
+	for (std::vector<WorldTransform*>& worldTransformBlockLine : worldTransformBlocks_) {
+		for (WorldTransform* worldTransformBlock : worldTransformBlockLine) {
+			if (!worldTransformBlock)
+				continue;
+			worldTransformBlock->UpdateMatarix();
+		}
+	}
 	
-   
+
+#ifdef _DEBUG
+
+	if (input_->TriggerKey(DIK_V)) {
+		isDebugCameraActive_ = !isDebugCameraActive_;
+	}
+#endif
+
+	if (isDebugCameraActive_) {
+		debugCamera_->Update();
+		camera_.matView = debugCamera_->GetCamera().matView;
+		camera_.matProjection = debugCamera_->GetCamera().matProjection;
+		camera_.TransferMatrix();
+
+	} else {
+		cameraController_->Update();
+		camera_.matView = cameraController_->GetViewProjection().matView;
+		camera_.matProjection = cameraController_->GetViewProjection().matProjection;
+	}
+	camera_.TransferMatrix();
+	
+
+
 }
+
 void GameScene::Draw() {
-	// 描画処理
-	DirectXCommon* dxCommon = DirectXCommon::GetInstance();
 
-	Sprite::PreDraw(dxCommon->GetCommandList());
-	 // 背景スプライトを 2枚描画
-    backGroundSprite_->SetPosition({ bgPosX1_, 520.0f });
-    backGroundSprite_->Draw();
+	// コマンドリストの取得
+	ID3D12GraphicsCommandList* commandList = dxCommon_->GetCommandList();
 
-    backGroundSprite2_->SetPosition({ bgPosX2_, 520.0f });
-    backGroundSprite2_->Draw();
+#pragma region 背景スプライト描画
+	// 背景スプライト描画前処理
+	Sprite::PreDraw(commandList);
 
 	
+
 	Sprite::PostDraw();
+	dxCommon_->ClearDepthBuffer();
+	KamataEngine::Model::PreDraw();
+
+	/// <summary>
+	/// ここに3Dオブジェクトの描画処理を追加できる
+
+	player_->Draw();
+	//enemy_->Draw();
+	//skydome_->Draw();
+
+	for (std::vector<WorldTransform*>& worldTransformBlockLine : worldTransformBlocks_) {
+		for (WorldTransform* worldTransformBlock : worldTransformBlockLine) {
+			if (!worldTransformBlock)
+				continue;
+			modelBlock_->Draw(*worldTransformBlock, camera_);
+		}
+	}
+
+	
+
+	KamataEngine::Model::PostDraw();
+
+	Sprite::PreDraw(commandList);
+
+	Sprite::PostDraw();
+}
+
+void GameScene::GenerateBlocks() {
+	uint32_t kNumBlockVirtical = mapChipField_->GetNumBlockVirtical();
+	uint32_t kNumBlockHorizontal = mapChipField_->GetNumBlockHorizontal();
+
+	worldTransformBlocks_.resize(kNumBlockVirtical);
+
+	for (uint32_t i = 0; i < kNumBlockVirtical; i++) {
+		worldTransformBlocks_[i].resize(kNumBlockHorizontal);
+	}
+
+	for (uint32_t i = 0; i < kNumBlockVirtical; ++i) {
+		for (uint32_t j = 0; j < kNumBlockHorizontal; ++j) {
+
+			if (mapChipField_->GetMapChipTypeByIndex(j, i) == MapChipType::kBlock) {
+				WorldTransform* worldTransform = new WorldTransform();
+				worldTransform->Initialize();
+				worldTransformBlocks_[i][j] = worldTransform;
+				worldTransformBlocks_[i][j]->translation_ = mapChipField_->GetMapChipPositionByIndex(j, i);
+			}
+		}
+	}
+}
+
+void GameScene::SwitchStage() {
+
+	if (player_->switchNumber_ == 1) {
+
+
+		for (std::vector<WorldTransform*>& worldTransformBlockLine : worldTransformBlocks_) {
+			for (WorldTransform* worldTransformBlock : worldTransformBlockLine) {
+				delete worldTransformBlock;
+			}
+			worldTransformBlockLine.clear();
+		}
+		
+		worldTransformBlocks_.clear();
+		mapChipField_->LoadMapChipCsv("Resources/MapTest.csv");
+		GenerateBlocks();
+
+		player_->switchNumber_ = 1;
+
+		if (input_->TriggerKey(DIK_H)) {
+			player_->switchNumber_ = 0;
+		}
+	}
+
+	if (player_->switchNumber_ == 2) {
+		for (std::vector<WorldTransform*>& worldTransformBlockLine : worldTransformBlocks_) {
+			for (WorldTransform* worldTransformBlock : worldTransformBlockLine) {
+				delete worldTransformBlock;
+			}
+			worldTransformBlockLine.clear();
+		}
+		
+		worldTransformBlocks_.clear();
+		mapChipField_->LoadMapChipCsv("Resources/MapTest1.csv");
+		GenerateBlocks();
+
+		player_->switchNumber_ = 2;
+
+		if (input_->TriggerKey(DIK_H)) {
+			player_->switchNumber_ = 1;
+		}
+	}
+
+	
+
 }
